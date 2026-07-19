@@ -9,7 +9,7 @@ a configurable SKU, collation and size.
 
 ```hcl
 module "sql_database" {
-  source = "github.com/cybercapybara/terraform-azurerm-sql-database"
+  source = "github.com/moveeeax/terraform-azurerm-sql-database"
 
   server_name         = "prod-sqlsrv01"
   database_name       = "appdb"
