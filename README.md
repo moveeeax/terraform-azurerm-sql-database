@@ -2,8 +2,8 @@
 
 Terraform module that manages an [Azure](https://azure.microsoft.com/) SQL
 database together with the logical server that hosts it. It creates a hardened
-server (TLS 1.2, public access disabled by default) and a single database with
-a configurable SKU, collation and size.
+server (TLS 1.2, public access disabled, transparent data encryption managed
+explicitly) and a single database with a configurable SKU, collation and size.
 
 ## Usage
 
@@ -27,14 +27,62 @@ module "sql_database" {
 }
 ```
 
+`administrator_login_password` has no default. Supply it from a secret store
+(Key Vault, `TF_VAR_db_password`, your CI's secret mechanism) — never from a
+`.tfvars` file in the repository.
+
 A runnable example lives in [`examples/basic`](examples/basic).
+
+## Security posture
+
+| Behaviour                     | Default                                                     |
+|-------------------------------|-------------------------------------------------------------|
+| Public network access         | Disabled                                                    |
+| Minimum TLS version           | `1.2`; `"Disabled"` is rejected by input validation         |
+| Transparent data encryption   | Managed by this module with the service-managed key         |
+| Firewall rules                | **None** — the module creates no `azurerm_mssql_firewall_rule` |
+
+The module deliberately creates **no firewall rules**. In particular it does not
+create the widely copied "allow Azure services" rule
+(`start_ip_address = "0.0.0.0"`, `end_ip_address = "0.0.0.0"`): despite the name,
+that rule admits resources in *every* Azure tenant, not only your own. If you
+need public reachability, set `public_network_access_enabled = true` and add
+narrowly scoped `azurerm_mssql_firewall_rule` or
+`azurerm_mssql_virtual_network_rule` resources alongside the module. Private
+endpoints are the better option.
+
+### Not managed by this module
+
+Server auditing (`azurerm_mssql_server_extended_auditing_policy`) and Microsoft
+Defender for SQL / threat detection
+(`azurerm_mssql_server_security_alert_policy`) are **not** created here. Both
+need a storage account or Log Analytics workspace — and, for managed-identity
+auth, an identity on the server — that this module does not own, and Defender
+for SQL is separately billed. Attach them to the exported `server_id`:
+
+```hcl
+resource "azurerm_mssql_server_security_alert_policy" "this" {
+  resource_group_name  = "prod-rg"
+  server_name          = "prod-sqlsrv01"
+  state                = "Enabled"
+  email_account_admins = true
+}
+```
 
 ## Requirements
 
-| Name      | Version  |
-|-----------|----------|
-| terraform | >= 1.5   |
-| azurerm   | >= 3.0   |
+| Name      | Version        |
+|-----------|----------------|
+| terraform | >= 1.5         |
+| azurerm   | >= 3.0, < 5.0  |
+
+The azurerm constraint is bounded on both ends: every argument used here exists
+in 3.0 as well as 4.x, and the upper bound keeps the announced 5.0 major release
+from breaking callers who do not commit a dependency lock file.
+
+Running the test suite (`terraform test`) additionally needs Terraform or
+OpenTofu >= 1.7 for `mock_provider`. That is a contributor requirement only —
+consumers still only need 1.5.
 
 ## Inputs
 
@@ -44,14 +92,14 @@ A runnable example lives in [`examples/basic`](examples/basic).
 | `database_name`                 | Name of the database created on the server.                       | `string`      | n/a                              |   yes    |
 | `resource_group_name`           | Name of the resource group in which to create the resources.      | `string`      | n/a                              |   yes    |
 | `location`                      | Azure region in which to create the resources.                    | `string`      | n/a                              |   yes    |
-| `server_version`                | Version of the SQL logical server.                                | `string`      | `"12.0"`                         |    no    |
-| `administrator_login`           | Administrator login name for the SQL server.                      | `string`      | `"sqladmin"`                     |    no    |
-| `administrator_login_password`  | Administrator password for the SQL server (sensitive).            | `string`      | n/a                              |   yes    |
-| `minimum_tls_version`           | Minimum TLS version accepted by the SQL server.                   | `string`      | `"1.2"`                          |    no    |
+| `server_version`                | Version of the SQL logical server. `"2.0"` or `"12.0"`.           | `string`      | `"12.0"`                         |    no    |
+| `administrator_login`           | Administrator login name. Reserved logins are rejected.           | `string`      | `"sqladmin"`                     |    no    |
+| `administrator_login_password`  | Administrator password for the SQL server (sensitive, min 8 chars). | `string`    | n/a                              |   yes    |
+| `minimum_tls_version`           | Minimum TLS version. One of `"1.0"`, `"1.1"`, `"1.2"`.            | `string`      | `"1.2"`                          |    no    |
 | `public_network_access_enabled` | Whether the SQL server is reachable over the public internet.     | `bool`        | `false`                          |    no    |
 | `sku_name`                      | SKU of the database.                                              | `string`      | `"S0"`                           |    no    |
 | `collation`                     | Collation of the database.                                        | `string`      | `"SQL_Latin1_General_CP1_CI_AS"` |    no    |
-| `max_size_gb`                   | Maximum size of the database in gigabytes.                        | `number`      | `32`                             |    no    |
+| `max_size_gb`                   | Maximum size of the database in gigabytes (whole number >= 1).    | `number`      | `32`                             |    no    |
 | `zone_redundant`                | Whether the database is zone-redundant.                           | `bool`        | `false`                          |    no    |
 | `tags`                          | Map of tags applied to the server and database.                   | `map(string)` | `{}`                             |    no    |
 
@@ -63,6 +111,16 @@ A runnable example lives in [`examples/basic`](examples/basic).
 | `server_fqdn`   | Fully qualified domain name of the SQL server.     |
 | `database_id`   | ID of the database.                                |
 | `database_name` | Name of the database.                              |
+
+## Development
+
+```sh
+terraform fmt -recursive
+terraform init -backend=false
+terraform validate
+terraform test        # mocked provider: no Azure credentials, no network
+tflint --recursive
+```
 
 ## License
 

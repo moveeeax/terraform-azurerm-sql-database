@@ -4,13 +4,22 @@ terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = ">= 3.0"
+      version = ">= 3.0, < 5.0"
     }
   }
 }
 
 provider "azurerm" {
   features {}
+}
+
+# Supplied at run time, e.g. via TF_VAR_administrator_login_password or a
+# secret store. The previous version of this example hard-coded a password
+# literal, which is the exact pattern people copy into production.
+variable "administrator_login_password" {
+  description = "Administrator password for the example SQL server."
+  type        = string
+  sensitive   = true
 }
 
 module "sql_database" {
@@ -22,7 +31,7 @@ module "sql_database" {
   location            = "eastus"
 
   administrator_login          = "sqladmin"
-  administrator_login_password = "ChangeMe-Example-P4ss!"
+  administrator_login_password = var.administrator_login_password
   sku_name                     = "S0"
 
   tags = {
