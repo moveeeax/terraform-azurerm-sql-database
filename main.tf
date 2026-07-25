@@ -12,6 +12,14 @@ resource "azurerm_mssql_server" "this" {
   tags = var.tags
 }
 
+# Azure turns transparent data encryption on with a service-managed key when a
+# logical server is created, but Terraform does not track that unless the
+# setting is declared. Declaring it makes encryption at rest explicit and lets
+# `terraform plan` report drift if TDE is ever changed outside of Terraform.
+resource "azurerm_mssql_server_transparent_data_encryption" "this" {
+  server_id = azurerm_mssql_server.this.id
+}
+
 resource "azurerm_mssql_database" "this" {
   name      = var.database_name
   server_id = azurerm_mssql_server.this.id
