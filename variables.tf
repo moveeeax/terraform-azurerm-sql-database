@@ -82,13 +82,13 @@ variable "administrator_login_password" {
 }
 
 variable "minimum_tls_version" {
-  description = "Minimum TLS version accepted by the SQL server. Leave at 1.2 unless a legacy client genuinely cannot negotiate it. \"Disabled\" is deliberately not accepted, because it removes the TLS floor entirely."
+  description = "Minimum TLS version accepted by the SQL server. Only \"1.2\" is accepted: azurerm 5.0 rejects \"1.0\", \"1.1\" and \"Disabled\" for azurerm_mssql_server, and the module refuses them on every provider version so the result does not depend on which provider major resolves."
   type        = string
   default     = "1.2"
 
   validation {
-    condition     = contains(["1.0", "1.1", "1.2"], var.minimum_tls_version)
-    error_message = "minimum_tls_version must be one of \"1.0\", \"1.1\" or \"1.2\". \"Disabled\" is not accepted by this module because it removes the minimum TLS requirement."
+    condition     = var.minimum_tls_version == "1.2"
+    error_message = "minimum_tls_version must be \"1.2\". \"1.0\", \"1.1\" and \"Disabled\" are rejected by azurerm 5.x and by this module."
   }
 }
 

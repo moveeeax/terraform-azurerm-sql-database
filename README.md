@@ -9,7 +9,7 @@ explicitly) and a single database with a configurable SKU, collation and size.
 
 ```hcl
 module "sql_database" {
-  source = "github.com/moveeeax/terraform-azurerm-sql-database"
+  source = "github.com/moveeeax/terraform-azurerm-sql-database?ref=v1.0.0"
 
   server_name         = "prod-sqlsrv01"
   database_name       = "appdb"
@@ -65,7 +65,8 @@ resource "azurerm_mssql_server_security_alert_policy" "this" {
   resource_group_name  = "prod-rg"
   server_name          = "prod-sqlsrv01"
   state                = "Enabled"
-  email_account_admins = true
+  # azurerm 5.x name; on azurerm 3.x/4.x the argument is `email_account_admins`.
+  email_account_admins_enabled = true
 }
 ```
 
@@ -74,11 +75,13 @@ resource "azurerm_mssql_server_security_alert_policy" "this" {
 | Name      | Version        |
 |-----------|----------------|
 | terraform | >= 1.5         |
-| azurerm   | >= 3.0, < 5.0  |
+| azurerm   | >= 3.0, < 6.0  |
 
 The azurerm constraint is bounded on both ends: every argument used here exists
-in 3.0 as well as 4.x, and the upper bound keeps the announced 5.0 major release
-from breaking callers who do not commit a dependency lock file.
+in 3.0, 4.x and 5.x (azurerm 5.0.0 was released on 2026-07-27), and the upper
+bound keeps the next major release from breaking callers who do not commit a
+dependency lock file. CI validates and tests against the 3.0.0 floor and the
+latest 5.x release.
 
 Running the test suite (`terraform test`) additionally needs Terraform or
 OpenTofu >= 1.7 for `mock_provider`. That is a contributor requirement only —
@@ -95,7 +98,7 @@ consumers still only need 1.5.
 | `server_version`                | Version of the SQL logical server. `"2.0"` or `"12.0"`.           | `string`      | `"12.0"`                         |    no    |
 | `administrator_login`           | Administrator login name. Reserved logins are rejected.           | `string`      | `"sqladmin"`                     |    no    |
 | `administrator_login_password`  | Administrator password for the SQL server (sensitive, min 8 chars). | `string`    | n/a                              |   yes    |
-| `minimum_tls_version`           | Minimum TLS version. One of `"1.0"`, `"1.1"`, `"1.2"`.            | `string`      | `"1.2"`                          |    no    |
+| `minimum_tls_version`           | Minimum TLS version. Only `"1.2"` is accepted (azurerm 5.x rejects older values). | `string`      | `"1.2"`                          |    no    |
 | `public_network_access_enabled` | Whether the SQL server is reachable over the public internet.     | `bool`        | `false`                          |    no    |
 | `sku_name`                      | SKU of the database.                                              | `string`      | `"S0"`                           |    no    |
 | `collation`                     | Collation of the database.                                        | `string`      | `"SQL_Latin1_General_CP1_CI_AS"` |    no    |
