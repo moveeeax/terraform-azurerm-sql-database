@@ -95,6 +95,15 @@ run "rejects_disabled_minimum_tls_version" {
   expect_failures = [var.minimum_tls_version]
 }
 
+run "rejects_legacy_minimum_tls_version" {
+  command = plan
+  variables {
+    minimum_tls_version = "1.1"
+  }
+
+  expect_failures = [var.minimum_tls_version]
+}
+
 run "rejects_unknown_minimum_tls_version" {
   command = plan
   variables {
