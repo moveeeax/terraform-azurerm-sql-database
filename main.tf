@@ -65,5 +65,28 @@ resource "azurerm_mssql_database" "this" {
   max_size_gb    = var.max_size_gb
   zone_redundant = var.zone_redundant
 
+  # Both blocks are Optional+Computed in the provider. Leaving them out keeps
+  # whatever Azure has (7-day point-in-time restore, no long-term retention on
+  # a new database), so existing deployments see no change. Removing an input
+  # later does not reset the policy either: the last applied value stays.
+  dynamic "short_term_retention_policy" {
+    for_each = var.short_term_retention_days == null ? [] : [var.short_term_retention_days]
+
+    content {
+      retention_days = short_term_retention_policy.value
+    }
+  }
+
+  dynamic "long_term_retention_policy" {
+    for_each = var.long_term_retention == null ? [] : [var.long_term_retention]
+
+    content {
+      weekly_retention  = long_term_retention_policy.value.weekly
+      monthly_retention = long_term_retention_policy.value.monthly
+      yearly_retention  = long_term_retention_policy.value.yearly
+      week_of_year      = long_term_retention_policy.value.week_of_year
+    }
+  }
+
   tags = var.tags
 }

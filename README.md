@@ -83,6 +83,33 @@ fails, because nobody could sign in.
 `tenant_id` defaults to the tenant of the azurerm provider. `object_id` and
 `tenant_id` must be GUIDs.
 
+## Backup retention
+
+Without these inputs the module leaves backup retention to Azure: 7 days of
+point-in-time restore and no long-term retention on a new database. Most audit
+retention requirements need more. A common setting:
+
+```hcl
+  short_term_retention_days = 35 # point-in-time restore, 1-35 days
+
+  long_term_retention = {
+    weekly       = "P12W" # keep each weekly full backup 12 weeks
+    monthly      = "P12M" # keep the first backup of each month 12 months
+    yearly       = "P7Y"  # keep one backup a year for 7 years
+    week_of_year = 1      # ...taken from week 1
+  }
+```
+
+`weekly`, `monthly` and `yearly` take ISO 8601 durations of a single unit
+(`P30D`, `P12W`, `P12M`, `P5Y`) or `PT0S` for none; every field is optional but
+at least one must be set. The Basic tier allows at most 7 days of
+point-in-time restore.
+
+Removing either input later does not undo it: the provider treats both blocks
+as optional and computed, so Azure keeps the last applied policy. Set the
+values back explicitly (e.g. `short_term_retention_days = 7`,
+`weekly = "PT0S"`) to reduce retention.
+
 ## Security posture
 
 | Behaviour                     | Default                                                     |
@@ -156,6 +183,8 @@ consumers still only need 1.5.
 | `collation`                     | Collation of the database.                                        | `string`      | `"SQL_Latin1_General_CP1_CI_AS"` |    no    |
 | `max_size_gb`                   | Maximum size of the database in gigabytes (whole number >= 1).    | `number`      | `32`                             |    no    |
 | `zone_redundant`                | Whether the database is zone-redundant.                           | `bool`        | `false`                          |    no    |
+| `short_term_retention_days`     | Point-in-time restore retention in days (1-35). `null` keeps the Azure default of 7. | `number`      | `null`                           |    no    |
+| `long_term_retention`           | Long-term retention: optional `weekly`, `monthly`, `yearly` (ISO 8601) and `week_of_year` (1-52). | `object`      | `null`                           |    no    |
 | `tags`                          | Map of tags applied to the server and database.                   | `map(string)` | `{}`                             |    no    |
 
 ## Outputs
