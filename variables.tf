@@ -69,15 +69,42 @@ variable "administrator_login" {
 }
 
 variable "administrator_login_password" {
-  description = "Administrator password for the SQL server. Has no default on purpose: supply it from a secret store or an environment variable, never a committed .tfvars file."
+  description = "Administrator password for the SQL server. Supply it from a secret store or an environment variable, never a committed .tfvars file. Required unless azuread_administrator.azuread_authentication_only is true; the null default exists only for that case."
   type        = string
   sensitive   = true
+  default     = null
 
   validation {
     # Azure's own complexity floor is 8 characters; anything shorter fails the
-    # create call rather than the plan.
-    condition     = length(var.administrator_login_password) >= 8
+    # create call rather than the plan. try() turns length(null) into a pass:
+    # whether null is allowed is decided by the precondition on the server.
+    condition     = try(length(var.administrator_login_password) >= 8, true)
     error_message = "administrator_login_password must be at least 8 characters long."
+  }
+}
+
+variable "azuread_administrator" {
+  description = "Microsoft Entra ID (Azure AD) administrator of the SQL server, usually a group. azuread_authentication_only defaults to false so SQL logins keep working; setting it to true disables every SQL login, including administrator_login, and lets administrator_login_password be omitted. tenant_id defaults to the provider's tenant."
+  type = object({
+    login_username              = string
+    object_id                   = string
+    tenant_id                   = optional(string)
+    azuread_authentication_only = optional(bool, false)
+  })
+  default = null
+
+  validation {
+    condition     = var.azuread_administrator == null || try(length(var.azuread_administrator.login_username) >= 1, false)
+    error_message = "azuread_administrator.login_username must not be empty."
+  }
+
+  validation {
+    # The provider parses both values as UUIDs only once the API call is made.
+    condition = var.azuread_administrator == null || try(alltrue([
+      can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", var.azuread_administrator.object_id)),
+      var.azuread_administrator.tenant_id == null || can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", var.azuread_administrator.tenant_id)),
+    ]), false)
+    error_message = "azuread_administrator.object_id and tenant_id must be GUIDs."
   }
 }
 
