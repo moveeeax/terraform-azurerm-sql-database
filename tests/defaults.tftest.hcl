@@ -166,3 +166,165 @@ run "rejects_fractional_max_size_gb" {
 
   expect_failures = [var.max_size_gb]
 }
+
+# Entra ID administrator (issue #3). The all-zero GUIDs are placeholders, not
+# real directory objects.
+
+run "azuread_administrator_is_off_by_default" {
+  command = plan
+
+  assert {
+    condition     = length(azurerm_mssql_server.this.azuread_administrator) == 0
+    error_message = "No Entra ID administrator may be configured unless azuread_administrator is set."
+  }
+
+  assert {
+    condition     = azurerm_mssql_server.this.administrator_login == "sqladmin"
+    error_message = "Existing deployments must keep their SQL administrator login."
+  }
+}
+
+run "azuread_administrator_keeps_sql_auth_by_default" {
+  command = plan
+
+  variables {
+    azuread_administrator = {
+      login_username = "sql-admins"
+      object_id      = "00000000-0000-0000-0000-000000000001"
+    }
+  }
+
+  assert {
+    condition     = azurerm_mssql_server.this.azuread_administrator[0].login_username == "sql-admins"
+    error_message = "azuread_administrator.login_username must be wired through to the server."
+  }
+
+  assert {
+    condition     = azurerm_mssql_server.this.azuread_administrator[0].object_id == "00000000-0000-0000-0000-000000000001"
+    error_message = "azuread_administrator.object_id must be wired through to the server."
+  }
+
+  assert {
+    condition     = azurerm_mssql_server.this.azuread_administrator[0].azuread_authentication_only == false
+    error_message = "Entra-only authentication must stay off unless explicitly enabled: it disables every SQL login."
+  }
+
+  assert {
+    condition     = azurerm_mssql_server.this.administrator_login == "sqladmin"
+    error_message = "Adding an Entra ID administrator must not drop the SQL administrator login."
+  }
+}
+
+run "azuread_only_without_password_omits_sql_admin" {
+  command = plan
+
+  variables {
+    administrator_login_password = null
+    azuread_administrator = {
+      login_username              = "sql-admins"
+      object_id                   = "00000000-0000-0000-0000-000000000001"
+      tenant_id                   = "00000000-0000-0000-0000-000000000002"
+      azuread_authentication_only = true
+    }
+  }
+
+  assert {
+    condition     = azurerm_mssql_server.this.azuread_administrator[0].azuread_authentication_only == true
+    error_message = "azuread_authentication_only must be wired through to the server."
+  }
+
+  assert {
+    condition     = azurerm_mssql_server.this.azuread_administrator[0].tenant_id == "00000000-0000-0000-0000-000000000002"
+    error_message = "azuread_administrator.tenant_id must be wired through to the server."
+  }
+
+  # administrator_login is Optional+Computed, so the mock fills a value in when
+  # the module passes null. The local is what decides the null.
+  assert {
+    condition     = local.sql_admin_omitted == true
+    error_message = "An Entra-only server created without a password must not get a SQL administrator login."
+  }
+}
+
+run "azuread_only_with_password_keeps_login" {
+  command = plan
+
+  variables {
+    azuread_administrator = {
+      login_username              = "sql-admins"
+      object_id                   = "00000000-0000-0000-0000-000000000001"
+      azuread_authentication_only = true
+    }
+  }
+
+  # An existing server switched to Entra-only keeps its login in config, so the
+  # plan does not try to remove an attribute Azure cannot change.
+  assert {
+    condition     = azurerm_mssql_server.this.administrator_login == "sqladmin"
+    error_message = "A supplied password must keep the SQL administrator login in the configuration."
+  }
+}
+
+run "rejects_missing_password_without_azuread_only" {
+  command = plan
+
+  variables {
+    administrator_login_password = null
+    azuread_administrator = {
+      login_username = "sql-admins"
+      object_id      = "00000000-0000-0000-0000-000000000001"
+    }
+  }
+
+  expect_failures = [azurerm_mssql_server.this]
+}
+
+run "rejects_missing_password_without_azuread_administrator" {
+  command = plan
+
+  variables {
+    administrator_login_password = null
+  }
+
+  expect_failures = [azurerm_mssql_server.this]
+}
+
+run "rejects_non_guid_azuread_object_id" {
+  command = plan
+
+  variables {
+    azuread_administrator = {
+      login_username = "sql-admins"
+      object_id      = "sql-admins"
+    }
+  }
+
+  expect_failures = [var.azuread_administrator]
+}
+
+run "rejects_non_guid_azuread_tenant_id" {
+  command = plan
+
+  variables {
+    azuread_administrator = {
+      login_username = "sql-admins"
+      object_id      = "00000000-0000-0000-0000-000000000001"
+      tenant_id      = "contoso.onmicrosoft.com"
+    }
+  }
+
+  expect_failures = [var.azuread_administrator]
+}
+
+run "rejects_empty_azuread_login_username" {
+  command = plan
+
+  variables {
+    azuread_administrator = {
+      login_username = ""
+      object_id      = "00000000-0000-0000-0000-000000000001"
+    }
+  }
+
+  expect_failures = [var.azuread_administrator]
+}

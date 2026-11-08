@@ -27,11 +27,61 @@ module "sql_database" {
 }
 ```
 
-`administrator_login_password` has no default. Supply it from a secret store
-(Key Vault, `TF_VAR_db_password`, your CI's secret mechanism) — never from a
-`.tfvars` file in the repository.
+`administrator_login_password` must be supplied unless the server is
+Entra-only (see below). Supply it from a secret store (Key Vault,
+`TF_VAR_db_password`, your CI's secret mechanism) — never from a `.tfvars` file
+in the repository.
 
 A runnable example lives in [`examples/basic`](examples/basic).
+
+## Microsoft Entra ID authentication
+
+`azuread_administrator` sets a Microsoft Entra ID (Azure AD) principal, usually
+a group, as the server's Entra administrator. On its own it adds Entra sign-in
+next to the existing SQL logins and changes nothing else:
+
+```hcl
+module "sql_database" {
+  source = "github.com/moveeeax/terraform-azurerm-sql-database?ref=v1.0.0"
+
+  # ...
+
+  administrator_login_password = var.db_password
+
+  azuread_administrator = {
+    login_username = "sql-admins"                           # display name of the group
+    object_id      = "00000000-0000-0000-0000-000000000000" # object ID of the group
+  }
+}
+```
+
+Recommended for new servers: `azuread_authentication_only = true`. It disables
+every SQL login, so no password has to be stored anywhere, and
+`administrator_login_password` can be left out:
+
+```hcl
+  azuread_administrator = {
+    login_username              = "sql-admins"
+    object_id                   = "00000000-0000-0000-0000-000000000000"
+    azuread_authentication_only = true
+  }
+```
+
+It is off by default on purpose. Turning it on for an existing server cuts off
+every application that still connects with a SQL login, including the
+`administrator_login` account. Move those applications to Entra ID first
+(managed identities or service principals), then flip the flag.
+
+When `azuread_authentication_only = true` and no password is given, the server
+is created without a SQL administrator and `administrator_login` is ignored.
+If you switch an existing server to Entra-only, keep passing the password you
+already have: the SQL administrator login of an existing server cannot be
+removed, and dropping the password from the configuration would show up as a
+change. Without a password and without Entra-only authentication the plan
+fails, because nobody could sign in.
+
+`tenant_id` defaults to the tenant of the azurerm provider. `object_id` and
+`tenant_id` must be GUIDs.
 
 ## Security posture
 
@@ -40,6 +90,7 @@ A runnable example lives in [`examples/basic`](examples/basic).
 | Public network access         | Disabled                                                    |
 | Minimum TLS version           | `1.2`; `"Disabled"` is rejected by input validation         |
 | Transparent data encryption   | Managed by this module with the service-managed key         |
+| Entra ID administrator        | None; Entra-only auth is opt-in (`azuread_authentication_only`) |
 | Firewall rules                | **None** — the module creates no `azurerm_mssql_firewall_rule` |
 
 The module deliberately creates **no firewall rules**. In particular it does not
@@ -97,7 +148,8 @@ consumers still only need 1.5.
 | `location`                      | Azure region in which to create the resources.                    | `string`      | n/a                              |   yes    |
 | `server_version`                | Version of the SQL logical server. `"2.0"` or `"12.0"`.           | `string`      | `"12.0"`                         |    no    |
 | `administrator_login`           | Administrator login name. Reserved logins are rejected.           | `string`      | `"sqladmin"`                     |    no    |
-| `administrator_login_password`  | Administrator password for the SQL server (sensitive, min 8 chars). | `string`    | n/a                              |   yes    |
+| `administrator_login_password`  | Administrator password for the SQL server (sensitive, min 8 chars). Optional only for an Entra-only server. | `string`    | `null`                           | yes, unless Entra-only |
+| `azuread_administrator`         | Entra ID administrator: `login_username`, `object_id`, optional `tenant_id` and `azuread_authentication_only` (default `false`). | `object`      | `null`                           |    no    |
 | `minimum_tls_version`           | Minimum TLS version. Only `"1.2"` is accepted (azurerm 5.x rejects older values). | `string`      | `"1.2"`                          |    no    |
 | `public_network_access_enabled` | Whether the SQL server is reachable over the public internet.     | `bool`        | `false`                          |    no    |
 | `sku_name`                      | SKU of the database.                                              | `string`      | `"S0"`                           |    no    |
