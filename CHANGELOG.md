@@ -15,6 +15,10 @@ All notable changes to this module are documented here. The format follows
 - `administrator_login_password` is now optional when
   `azuread_authentication_only = true`; the server is then created without a
   SQL administrator. In every other case a missing password fails the plan.
+- `short_term_retention_days` and `long_term_retention` inputs: configure
+  point-in-time restore retention (1-35 days) and weekly, monthly and yearly
+  long-term retention on the database. Both default to `null`, which emits no
+  block and leaves the existing retention unchanged.
 
 ## [1.1.0] - 2026-11-05
 

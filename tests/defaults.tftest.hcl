@@ -328,3 +328,120 @@ run "rejects_empty_azuread_login_username" {
 
   expect_failures = [var.azuread_administrator]
 }
+
+# Backup retention (issue #4).
+
+run "backup_retention_is_left_to_azure_by_default" {
+  command = plan
+
+  # The provider marks both blocks Optional+Computed, so the plan only stays
+  # unchanged for existing databases if the module emits neither block.
+  assert {
+    condition     = length(azurerm_mssql_database.this.short_term_retention_policy) == 0
+    error_message = "No short_term_retention_policy block may be emitted unless short_term_retention_days is set."
+  }
+
+  assert {
+    condition     = length(azurerm_mssql_database.this.long_term_retention_policy) == 0
+    error_message = "No long_term_retention_policy block may be emitted unless long_term_retention is set."
+  }
+}
+
+run "backup_retention_is_wired_through" {
+  command = plan
+
+  variables {
+    short_term_retention_days = 35
+    long_term_retention = {
+      weekly       = "P4W"
+      monthly      = "P12M"
+      yearly       = "P5Y"
+      week_of_year = 1
+    }
+  }
+
+  assert {
+    condition     = azurerm_mssql_database.this.short_term_retention_policy[0].retention_days == 35
+    error_message = "short_term_retention_days must be wired through to the database."
+  }
+
+  assert {
+    condition = (
+      azurerm_mssql_database.this.long_term_retention_policy[0].weekly_retention == "P4W" &&
+      azurerm_mssql_database.this.long_term_retention_policy[0].monthly_retention == "P12M" &&
+      azurerm_mssql_database.this.long_term_retention_policy[0].yearly_retention == "P5Y" &&
+      azurerm_mssql_database.this.long_term_retention_policy[0].week_of_year == 1
+    )
+    error_message = "long_term_retention must be wired through to the database."
+  }
+}
+
+run "long_term_retention_accepts_a_single_field" {
+  command = plan
+
+  variables {
+    long_term_retention = {
+      monthly = "P12M"
+    }
+  }
+
+  assert {
+    condition     = azurerm_mssql_database.this.long_term_retention_policy[0].monthly_retention == "P12M"
+    error_message = "A partially filled long_term_retention must still emit the block."
+  }
+
+  assert {
+    condition     = length(azurerm_mssql_database.this.short_term_retention_policy) == 0
+    error_message = "Setting long-term retention alone must not touch point-in-time restore."
+  }
+}
+
+run "rejects_out_of_range_short_term_retention_days" {
+  command = plan
+  variables {
+    short_term_retention_days = 36
+  }
+
+  expect_failures = [var.short_term_retention_days]
+}
+
+run "rejects_fractional_short_term_retention_days" {
+  command = plan
+  variables {
+    short_term_retention_days = 7.5
+  }
+
+  expect_failures = [var.short_term_retention_days]
+}
+
+run "rejects_empty_long_term_retention" {
+  command = plan
+  variables {
+    long_term_retention = {}
+  }
+
+  expect_failures = [var.long_term_retention]
+}
+
+run "rejects_non_iso8601_long_term_retention" {
+  command = plan
+  variables {
+    long_term_retention = {
+      weekly = "4 weeks"
+    }
+  }
+
+  expect_failures = [var.long_term_retention]
+}
+
+run "rejects_out_of_range_week_of_year" {
+  command = plan
+  variables {
+    long_term_retention = {
+      yearly       = "P5Y"
+      week_of_year = 53
+    }
+  }
+
+  expect_failures = [var.long_term_retention]
+}

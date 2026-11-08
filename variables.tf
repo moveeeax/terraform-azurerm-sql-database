@@ -154,6 +154,60 @@ variable "zone_redundant" {
   default     = false
 }
 
+variable "short_term_retention_days" {
+  description = "Point-in-time restore retention of the database in days (1-35). null leaves the Azure default of 7 days in place. The Basic tier allows at most 7."
+  type        = number
+  default     = null
+
+  validation {
+    # The `if d != null` filter keeps the comparisons away from null: `||` does
+    # not short-circuit on Terraform 1.5.
+    condition     = alltrue([for d in [var.short_term_retention_days] : d >= 1 && d <= 35 && floor(d) == d if d != null])
+    error_message = "short_term_retention_days must be a whole number between 1 and 35."
+  }
+}
+
+variable "long_term_retention" {
+  description = "Long-term retention of full backups. weekly, monthly and yearly are ISO 8601 durations such as \"P4W\", \"P12M\" or \"P5Y\"; week_of_year (1-52) picks the weekly backup kept as the yearly one. null configures no long-term retention."
+  type = object({
+    weekly       = optional(string)
+    monthly      = optional(string)
+    yearly       = optional(string)
+    week_of_year = optional(number)
+  })
+  default = null
+
+  validation {
+    # An empty object would emit an empty block, which the provider rejects
+    # with an AtLeastOneOf error that does not name this input.
+    condition = var.long_term_retention == null || length([
+      for v in [
+        try(var.long_term_retention.weekly, null),
+        try(var.long_term_retention.monthly, null),
+        try(var.long_term_retention.yearly, null),
+        try(var.long_term_retention.week_of_year, null),
+      ] : v if v != null
+    ]) > 0
+    error_message = "long_term_retention must set at least one of weekly, monthly, yearly or week_of_year."
+  }
+
+  validation {
+    condition = alltrue([
+      for d in [
+        try(var.long_term_retention.weekly, null),
+        try(var.long_term_retention.monthly, null),
+        try(var.long_term_retention.yearly, null),
+      ] : can(regex("^P(T0S|[0-9]+[DWMY])$", d)) if d != null
+    ])
+    error_message = "long_term_retention weekly, monthly and yearly must be ISO 8601 durations of a single unit, e.g. \"P4W\", \"P12M\", \"P5Y\", or \"PT0S\" for none."
+  }
+
+  validation {
+    condition     = alltrue([for w in [try(var.long_term_retention.week_of_year, null)] : w >= 1 && w <= 52 && floor(w) == w if w != null])
+    error_message = "long_term_retention.week_of_year must be a whole number between 1 and 52."
+  }
+}
+
 variable "tags" {
   description = "Map of tags applied to the server and database."
   type        = map(string)
